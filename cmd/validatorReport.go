@@ -16,9 +16,12 @@ limitations under the License.
 package cmd
 
 import (
+	"fmt"
+	"sort"
 	"strconv"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 )
 
 // validatorReportCmd represents the validatorReport command
@@ -32,10 +35,38 @@ var validatorReportCmd = &cobra.Command{
 		}
 		akashVal := NewChainReporting("akashnet-2", "http://localhost:26657", "akash", "uakt")
 		akashVal.SetSDKContext()
-		akashVal.GetDateBlockHeightMapping(start)
+		blocks, err := akashVal.GetDateBlockHeightMapping(start)
+		if err != nil {
+			return err
+		}
+
+		var eg errgroup.Group
+		blockData := map[int64]AccountBlockData{}
+		sem := make(chan struct{}, 50)
+		blockNums := []int{}
+		for k, v := range blocks {
+			blockNums = append(blockNums, int(v.Block.Height))
+			k, v := k, v
+			eg.Go(func() error {
+				bd, err := akashVal.GetBlockData(v.Block.Height, "akash1lhenngdge40r5thghzxqpsryn4x084m9jkpdg2", k)
+				if err != nil {
+					return err
+				}
+				blockData[v.Block.Height] = bd
+				<-sem
+				return nil
+			})
+			sem <- struct{}{}
+		}
+
+		sort.Ints(blockNums)
+		for _, n := range blockNums {
+			blockData[int64(n)].Print()
+		}
 		// get day blocks
 		// loop over day blocks pulling data whole hog, make sure to limit concurrency
 		// in a seperate routine pull the price data. be sure to build in rate limit handling
+		fmt.Println(blockData)
 		return nil
 	},
 }

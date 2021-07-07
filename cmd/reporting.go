@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/simapp"
@@ -67,10 +68,10 @@ func NewChainReporting(chainid, nodeuri, prefix, token string) *ChainReporting {
 // 	GetAkashBlock(168228)
 // }
 
-func GetAkashBlock(height int64) {
+func GetAkashBlock(height int64, blockTime time.Time) {
 	akashVal := NewChainReporting("akashnet-2", "http://localhost:26657", "akash", "uakt")
 	akashVal.SetSDKContext()
-	bd, err := akashVal.GetBlockData(height, "akash1lhenngdge40r5thghzxqpsryn4x084m9jkpdg2")
+	bd, err := akashVal.GetBlockData(height, "akash1lhenngdge40r5thghzxqpsryn4x084m9jkpdg2", blockTime)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -78,10 +79,12 @@ func GetAkashBlock(height int64) {
 }
 
 type AccountBlockData struct {
+	Height     int64
 	Balance    sdk.Coin
 	Staked     sdk.Coin
 	Rewards    sdk.Coin
 	Commission sdk.Coin
+	Time       time.Time
 }
 
 func (bd AccountBlockData) Total() sdk.Coin {
@@ -96,7 +99,7 @@ func (bd AccountBlockData) Print() {
 	fmt.Println("total", bd.Total())
 }
 
-func (cr *ChainReporting) GetBlockData(height int64, valoper string) (AccountBlockData, error) {
+func (cr *ChainReporting) GetBlockData(height int64, valoper string, date time.Time) (AccountBlockData, error) {
 	addr, err := sdk.AccAddressFromBech32(valoper)
 	if err != nil {
 		return AccountBlockData{}, err
@@ -123,7 +126,7 @@ func (cr *ChainReporting) GetBlockData(height int64, valoper string) (AccountBlo
 	if err := eg.Wait(); err != nil {
 		return AccountBlockData{}, err
 	}
-	return AccountBlockData{bal, stk, rew, com}, nil
+	return AccountBlockData{height, bal, stk, rew, com, date}, nil
 }
 
 func (cr *ChainReporting) ValidatorCommissionAtHeight(height int64, val sdk.ValAddress) (sdk.Coin, error) {
