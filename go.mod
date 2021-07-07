@@ -3,6 +3,7 @@ module github.com/jackzampolin/reporting
 go 1.16
 
 require (
+	github.com/avast/retry-go v3.0.0+incompatible
 	github.com/cosmos/cosmos-sdk v0.42.6
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/spf13/cobra v1.1.3

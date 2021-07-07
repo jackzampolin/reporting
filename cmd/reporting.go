@@ -2,11 +2,15 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
 	"time"
 
+	"github.com/avast/retry-go"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/simapp"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -18,11 +22,56 @@ import (
 )
 
 type ChainReporting struct {
-	ChainID string
-	NodeURI string
-	Prefix  string
-	Token   string
-	Context client.Context
+	ChainID     string
+	NodeURI     string
+	Prefix      string
+	Token       string
+	CoinGeckoID string
+	Context     client.Context
+}
+
+type ErrRateLimitExceeded error
+
+func (cr *ChainReporting) GetPrice(date time.Time) (float64, error) {
+	url := fmt.Sprintf("https://api.coingecko.com/api/v3/coins/%s/history?date=%s&localization=false", cr.CoinGeckoID, fmt.Sprintf("%d-%d-%d", date.Day(), date.Month(), date.Year()))
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Accept", "application/json")
+
+	var resp *http.Response
+	retry.Do(func() error {
+		resp, err = http.DefaultClient.Do(req)
+		switch {
+		case resp.StatusCode == 429:
+			return ErrRateLimitExceeded(fmt.Errorf("429"))
+		case (resp.StatusCode < 200 || resp.StatusCode > 299):
+			return fmt.Errorf("non 2xx or 429 status code %d", resp.StatusCode)
+		case err != nil:
+			return err
+		default:
+			return nil
+		}
+
+	}, retry.RetryIf(func(err error) bool {
+		_, ok := err.(ErrRateLimitExceeded)
+		if ok {
+			fmt.Println("rate limit hit, waiting one min before retrying")
+			return true
+		}
+		return false
+	}), retry.Delay(time.Second*60))
+	defer resp.Body.Close()
+	bz, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return 0, err
+	}
+	data := CoinGeckoHistoricalPrice{}
+	if err := json.Unmarshal(bz, &data); err != nil {
+		return 0, err
+	}
+	return data.MarketData.CurrentPrice["usd"], nil
 }
 
 func (cr *ChainReporting) SetSDKContext() {
@@ -38,13 +87,14 @@ func (cr *ChainReporting) SetSDKContext() {
 	config.SetBech32PrefixForConsensusNode(bech32PrefixConsAddr, bech32PrefixConsPub)
 }
 
-func NewChainReporting(chainid, nodeuri, prefix, token string) *ChainReporting {
+func NewChainReporting(chainid, nodeuri, prefix, token, coingeckoid string) *ChainReporting {
 	enc := simapp.MakeTestEncodingConfig()
 	cr := &ChainReporting{
-		ChainID: chainid,
-		NodeURI: nodeuri,
-		Prefix:  prefix,
-		Token:   token,
+		ChainID:     chainid,
+		NodeURI:     nodeuri,
+		Prefix:      prefix,
+		Token:       token,
+		CoinGeckoID: coingeckoid,
 	}
 	cl, err := tmhttp.New(cr.NodeURI, "/websocket")
 	if err != nil {
@@ -69,7 +119,7 @@ func NewChainReporting(chainid, nodeuri, prefix, token string) *ChainReporting {
 // }
 
 func GetAkashBlock(height int64, blockTime time.Time) {
-	akashVal := NewChainReporting("akashnet-2", "http://localhost:26657", "akash", "uakt")
+	akashVal := NewChainReporting("akashnet-2", "http://localhost:26657", "akash", "uakt", "akash-network")
 	akashVal.SetSDKContext()
 	bd, err := akashVal.GetBlockData(height, "akash1lhenngdge40r5thghzxqpsryn4x084m9jkpdg2", blockTime)
 	if err != nil {
@@ -79,12 +129,44 @@ func GetAkashBlock(height int64, blockTime time.Time) {
 }
 
 type AccountBlockData struct {
-	Height     int64
-	Balance    sdk.Coin
-	Staked     sdk.Coin
-	Rewards    sdk.Coin
-	Commission sdk.Coin
-	Time       time.Time
+	Height     int64     `json:"height"`
+	Balance    sdk.Coin  `json:"balance"`
+	Staked     sdk.Coin  `json:"staked"`
+	Rewards    sdk.Coin  `json:"rewards"`
+	Commission sdk.Coin  `json:"commission"`
+	Time       time.Time `json:"time"`
+	Price      float64   `json:"price"`
+}
+
+func (abd AccountBlockData) CSVLine() []string {
+	return []string{
+		// date
+		fmt.Sprintf("%d/%d/%d", abd.Time.Month(), abd.Time.Day(), abd.Time.Year()),
+		// height
+		fmt.Sprintf("%d", abd.Height),
+		// price usd
+		fmt.Sprintf("%f", abd.Price),
+		// account balance native
+		abd.Balance.Amount.Quo(sdk.NewInt(1000000)).String(),
+		// account balance usd
+		fmt.Sprintf("%f", float64(abd.Balance.Amount.Quo(sdk.NewInt(1000000)).Int64())*abd.Price),
+		// staked balance native
+		abd.Staked.Amount.Quo(sdk.NewInt(1000000)).String(),
+		// staked balance usd
+		fmt.Sprintf("%f", float64(abd.Staked.Amount.Quo(sdk.NewInt(1000000)).Int64())*abd.Price),
+		// rewards balance native
+		abd.Rewards.Amount.Quo(sdk.NewInt(1000000)).String(),
+		// rewards balance usd
+		fmt.Sprintf("%f", float64(abd.Rewards.Amount.Quo(sdk.NewInt(1000000)).Int64())*abd.Price),
+		// commission balance native
+		abd.Commission.Amount.Quo(sdk.NewInt(1000000)).String(),
+		// commission balance usd
+		fmt.Sprintf("%f", float64(abd.Commission.Amount.Quo(sdk.NewInt(1000000)).Int64())*abd.Price),
+		// total balance native
+		abd.Total().Amount.Quo(sdk.NewInt(1000000)).String(),
+		// total balance usd
+		fmt.Sprintf("%f", float64(abd.Total().Amount.Quo(sdk.NewInt(1000000)).Int64())*abd.Price),
+	}
 }
 
 func (bd AccountBlockData) Total() sdk.Coin {
@@ -108,25 +190,33 @@ func (cr *ChainReporting) GetBlockData(height int64, valoper string, date time.T
 	var com, bal, rew, stk sdk.Coin
 	var eg = errgroup.Group{}
 	eg.Go(func() error {
-		com, err = cr.ValidatorCommissionAtHeight(height, val)
-		return err
+		return retry.Do(func() error {
+			com, err = cr.ValidatorCommissionAtHeight(height, val)
+			return err
+		})
 	})
 	eg.Go(func() error {
-		bal, err = cr.AccountBalanceAtHeight(height, addr)
-		return err
+		return retry.Do(func() error {
+			bal, err = cr.AccountBalanceAtHeight(height, addr)
+			return err
+		})
 	})
 	eg.Go(func() error {
-		rew, err = cr.AccountRewardsAtHeight(height, addr)
-		return err
+		return retry.Do(func() error {
+			rew, err = cr.AccountRewardsAtHeight(height, addr)
+			return err
+		})
 	})
 	eg.Go(func() error {
-		stk, err = cr.StakedTokens(height, addr)
-		return err
+		return retry.Do(func() error {
+			stk, err = cr.StakedTokens(height, addr)
+			return err
+		})
 	})
 	if err := eg.Wait(); err != nil {
 		return AccountBlockData{}, err
 	}
-	return AccountBlockData{height, bal, stk, rew, com, date}, nil
+	return AccountBlockData{height, bal, stk, rew, com, date, 0}, nil
 }
 
 func (cr *ChainReporting) ValidatorCommissionAtHeight(height int64, val sdk.ValAddress) (sdk.Coin, error) {
@@ -170,4 +260,19 @@ func (cr *ChainReporting) StakedTokens(height int64, acc sdk.AccAddress) (sdk.Co
 		tot = tot.Add(delegation)
 	}
 	return tot, nil
+}
+
+type CoinGeckoHistoricalPrice struct {
+	ID     string `json:"id"`
+	Symbol string `json:"symbol"`
+	Name   string `json:"name"`
+	Image  struct {
+		Thumb string `json:"thumb"`
+		Small string `json:"small"`
+	} `json:"image"`
+	MarketData struct {
+		CurrentPrice map[string]float64 `json:"current_price"`
+		MarketCap    map[string]float64 `json:"market_cap"`
+		TotalVolume  map[string]float64 `json:"total_volume"`
+	} `json:"market_data"`
 }

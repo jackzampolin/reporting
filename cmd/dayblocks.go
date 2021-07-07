@@ -42,7 +42,7 @@ var dayblocksCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		akashVal := NewChainReporting("akashnet-2", "http://localhost:26657", "akash", "uakt")
+		akashVal := NewChainReporting("akashnet-2", "http://localhost:26657", "akash", "uakt", "akash-network")
 		dayBlocks, err := akashVal.GetDateBlockHeightMapping(start)
 		if err != nil {
 			return err
@@ -77,8 +77,10 @@ func (cr *ChainReporting) GetDateBlockHeightMapping(startBlock int64) (map[time.
 		secondsPerBlock = start.Block.Time.Sub(status.SyncInfo.LatestBlockTime).Seconds() / float64(startBlock-status.SyncInfo.LatestBlockHeight)
 		dates           = makeDates(start.Block.Time, status.SyncInfo.LatestBlockTime)
 	)
-
 	for _, date := range dates {
+		if date.After(time.Now()) {
+			break
+		}
 		estimateBlock, err := cr.GetBlock(NextBlockHeight(start, date, secondsPerBlock))
 		if err != nil {
 			return nil, err
@@ -126,6 +128,9 @@ func makeDates(startTime, endTime time.Time) []time.Time {
 	for ct.Before(endTime) {
 		out = append(out, getMidnightTime(ct))
 		ct = ct.Add(time.Hour * 24)
+		if ct.After(time.Now()) {
+			return out
+		}
 	}
 	return out
 }
