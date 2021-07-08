@@ -3,95 +3,106 @@ package cmd
 import (
 	"encoding/csv"
 	"fmt"
+	"log"
 	"os"
 	"sort"
 	"strconv"
 
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 )
 
+func init() {
+	rootCmd.AddCommand(validatorReportCmd)
+}
+
 // validatorReportCmd represents the validatorReport command
 var validatorReportCmd = &cobra.Command{
-	Use:   "validator-report [start-block]",
-	Args:  cobra.ExactArgs(1),
+	Use:   "validator-report [network] [validator-acc-address] [start-block]",
+	Args:  cobra.ExactArgs(3),
 	Short: "outputs a csv of the data required for validator income reporting",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		start, err := strconv.ParseInt(args[0], 10, 64)
+		network, ok := config.Networks[args[0]]
+		if !ok {
+			return fmt.Errorf("network '%s' not configured", args[0])
+		}
+		network.SetSDKContext()
+		address, err := sdk.AccAddressFromBech32(args[1])
 		if err != nil {
 			return err
 		}
-		akashVal := NewChainReporting("akashnet-2", "http://localhost:26657", "akash", "uakt", "akash-network")
-		akashVal.SetSDKContext()
-		blocks, err := akashVal.GetDateBlockHeightMapping(start)
+		start, err := strconv.ParseInt(args[2], 10, 64)
+		if err != nil {
+			return err
+		}
+		blocks, err := network.GetDateBlockHeightMapping(start)
 		if err != nil {
 			return err
 		}
 
-		var eg errgroup.Group
-		blockData := map[int64]AccountBlockData{}
-		sem := make(chan struct{}, 50)
-		blockNums := []int{}
-		fmt.Println("len(blocks)", len(blocks))
+		log.Printf("starting data pull, note coingecko api only returns 50 days / min...")
+
+		var (
+			eg        errgroup.Group
+			blockData = map[int64]AccountBlockData{}
+			sem       = make(chan struct{}, 50)
+			blockNums = []int{}
+			count     int
+		)
 		for k, v := range blocks {
 			blockNums = append(blockNums, int(v.Block.Height))
 			k, v := k, v
-			fmt.Println("starting height", v.Block.Height)
 			eg.Go(func() error {
-				bd, err := akashVal.GetBlockData(v.Block.Height, "akash1lhenngdge40r5thghzxqpsryn4x084m9jkpdg2", k)
+				bd, err := network.GetBlockData(v.Block.Height, address, k)
 				if err != nil {
 					return err
 				}
-				price, err := akashVal.GetPrice(k)
+				price, err := network.GetPrice(k)
 				if err != nil {
 					return err
 				}
 				bd.Price = price
 				blockData[v.Block.Height] = bd
 				<-sem
-				fmt.Println("finished height", v.Block.Height)
+				count++
+				if count%10 == 0 {
+					log.Printf("%d of %d complete %f%%", count, len(blocks), (float64(count)/float64(len(blocks)))*100)
+				}
 				return nil
 			})
 			sem <- struct{}{}
 		}
 
+		// wait for all queries to return
 		if err := eg.Wait(); err != nil {
 			return err
 		}
 
-		out := csv.NewWriter(os.Stdout)
-		if err := out.Write(csvHeaders()); err != nil {
+		// sort block numbers
+		sort.Ints(blockNums)
+
+		// create file to save csv
+		file := fmt.Sprintf("report-%s-%d-%d.csv", network.ChainID, blockNums[0], blockNums[len(blockNums)-1])
+		log.Printf("saving results to file: %s", file)
+		out, err := os.Create(file)
+		if err != nil {
 			return err
 		}
-		sort.Ints(blockNums)
+
+		// create csv writer and write data to the csv in order
+		csv := csv.NewWriter(out)
+		if err := csv.Write(csvHeaders()); err != nil {
+			return err
+		}
 		for _, n := range blockNums {
-			if err := out.Write(blockData[int64(n)].CSVLine()); err != nil {
+			if err := csv.Write(blockData[int64(n)].CSVLine()); err != nil {
 				return err
 			}
 		}
-		out.Flush()
-		return out.Error()
+
+		// flush csv to file and return error
+		csv.Flush()
+		return csv.Error()
 	},
-}
-
-func init() {
-	rootCmd.AddCommand(validatorReportCmd)
-}
-
-func csvHeaders() []string {
-	return []string{
-		"date",
-		"height",
-		"price usd",
-		"account balance native",
-		"account balance usd",
-		"staked balance native",
-		"staked balance usd",
-		"rewards balance native",
-		"rewards balance usd",
-		"commission balance native",
-		"commission balance usd",
-		"total balance native",
-		"total balance usd",
-	}
 }

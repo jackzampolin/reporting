@@ -10,7 +10,10 @@ import (
 	"github.com/spf13/viper"
 )
 
-var cfgFile string
+var (
+	cfgFile string
+	config  Config
+)
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -51,7 +54,19 @@ func initConfig() {
 	viper.AutomaticEnv() // read in environment variables that match
 
 	// If a config file is found, read it in.
-	if err := viper.ReadInConfig(); err == nil {
-		fmt.Println("Using config file:", viper.ConfigFileUsed())
+	viper.ReadInConfig()
+
+	if err := viper.Unmarshal(&config); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	if len(config.Networks) > 0 {
+		for _, n := range config.Networks {
+			if err := n.Init(); err != nil {
+				fmt.Println(err)
+				os.Exit(1)
+			}
+		}
 	}
 }
