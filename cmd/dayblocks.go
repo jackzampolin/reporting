@@ -86,6 +86,10 @@ func (cr *NetworkDetails) GetDateBlockHeightMapping(startBlock int64) (map[time.
 		secondsPerBlock = SecondsPerBlock(start, estimateBlock)
 
 		diff := date.Sub(estimateBlock.Block.Time)
+
+		// todo: there is an issue here where the wrong date block could get pulled. This has to do with
+		// midnight height implementation below. debug and fix this.
+
 		for math.Abs(diff.Seconds()) > 60 {
 			estimateBlock, err = cr.GetBlock(NextBlockHeight(start, date, secondsPerBlock))
 			if err != nil {
@@ -94,7 +98,7 @@ func (cr *NetworkDetails) GetDateBlockHeightMapping(startBlock int64) (map[time.
 			secondsPerBlock = SecondsPerBlock(start, estimateBlock)
 			diff = date.Sub(estimateBlock.Block.Time)
 		}
-
+		// TODO: do we need to set the start block = estimate block for next iteration?
 		blockmap[date] = estimateBlock
 	}
 
@@ -120,8 +124,16 @@ func (cr *NetworkDetails) Status() (*ctypes.ResultStatus, error) {
 	return node.Status(context.Background())
 }
 
+// round dates close to midnight (practically thats what they will be)
+// up to the next date, anything small, means that we are on the right
+// date and should just return those digits.
+
+// TODO: completely review this logic
 func getMidnightTime(t0 time.Time) time.Time {
-	return time.Date(t0.Year(), t0.Month(), t0.Day()+1, 0, 0, 0, 0, t0.Location())
+	if t0.Hour() < 12 {
+		return time.Date(t0.Year(), t0.Month(), t0.Day(), 0, 0, 0, 0, t0.Location())
+	}
+	return time.Date(t0.Year(), t0.Month(), t0.Day()-1, 0, 0, 0, 0, t0.Location())
 }
 
 func makeDates(startTime, endTime time.Time) []time.Time {
