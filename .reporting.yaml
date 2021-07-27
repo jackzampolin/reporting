@@ -1,25 +1,25 @@
 networks:
-  cosmoshub-4:
-    chain-id: "cosmoshub-4"
-    archive: "http://localhost:26657"
-    prefix: "cosmos"
-    token: "uatom"
-    coin-gecko-id: "cosmos"
   akashnet-2:
     chain-id: "akashnet-2"
-    archive: "http://localhost:26657"
+    archive: "https://akash.technofractal.com:443"
     prefix: "akash"
     token: "uakt"
     coin-gecko-id: "akash-network"
+  cosmoshub-4:
+    chain-id: "cosmoshub-4"
+    archive: "https://hub.technofractal.com:443"
+    prefix: "cosmos"
+    token: "uatom"
+    coin-gecko-id: "atom"
+  osmosis-1:
+    chain-id: "osmosis-1"
+    archive: "https://osmosis.technofractal.com:443"
+    prefix: "osmo"
+    token: "uosmo"
+    coin-gecko-id: "osmosis" 
   sentinelhub-2:
     chain-id: "sentinelhub-2"
-    archive: "http://localhost:26657"
+    archive: "https://dvpn.technofractal.com:443"
     prefix: "sent"
     token: "udvpn"
     coin-gecko-id: "sentinel"
-  osmosis-1:
-    chain-id: "osmosis-1"
-    archive: "http://localhost:26657"
-    prefix: "osmo"
-    token: "uosmo"
-    coin-gecko-id: "osmosis"
