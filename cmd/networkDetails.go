@@ -112,24 +112,29 @@ func (cr *NetworkDetails) GetBlockData(height int64, addr sdk.AccAddress, date t
 	eg.Go(func() error {
 		return retry.Do(func() error {
 			com, err = cr.ValidatorCommissionAtHeight(height, val)
+			fmt.Println(val.String())
+			fmt.Println("validator commission", err)
 			return err
 		})
 	})
 	eg.Go(func() error {
 		return retry.Do(func() error {
 			bal, err = cr.AccountBalanceAtHeight(height, addr)
+			fmt.Println("account balance", err)
 			return err
 		})
 	})
 	eg.Go(func() error {
 		return retry.Do(func() error {
 			rew, err = cr.AccountRewardsAtHeight(height, addr)
+			fmt.Println("rewards balance", err)
 			return err
 		})
 	})
 	eg.Go(func() error {
 		return retry.Do(func() error {
 			stk, err = cr.StakedTokens(height, addr)
+			fmt.Println("staked tokens", err)
 			return err
 		})
 	})
