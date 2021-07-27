@@ -21,12 +21,12 @@ Supported Date Range Jan 1 2021 - Now (or end at Dec 31 2021). Also should be ab
 
 ### Kava
 [Kava network info](https://github.com/Kava-Labs/launch)
-- [ ] `kava-5`
+- [ ] `kava-4`
     - [ ] dates 
     - [ ] midnight blocks
     - [ ] validator address
     - [ ] custom reporting tooling for this (same thing that works for `akashnet-1` should work here too)
-    - [ ] archive data?
+    - [ ] archive data http://3.218.154.47:26657
 - [ ] `kava-7`
     - [ ] dates
     - [ ] midnight blocks for dates
