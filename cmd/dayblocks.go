@@ -50,13 +50,13 @@ func dayBlocksHuman(db map[time.Time]*ctypes.ResultBlock) map[string]int64 {
 	return out
 }
 
-func (cr *NetworkDetails) GetDateBlockHeightMapping(startBlock int64) (map[time.Time]*ctypes.ResultBlock, error) {
-	start, err := cr.GetBlock(startBlock)
+func (nd *NetworkDetails) GetDateBlockHeightMapping(startBlock int64) (map[time.Time]*ctypes.ResultBlock, error) {
+	start, err := nd.GetBlock(startBlock)
 	if err != nil {
 		return nil, err
 	}
 
-	status, err := cr.Status()
+	status, err := nd.Status()
 	if err != nil {
 		return nil, err
 	}
@@ -73,12 +73,20 @@ func (cr *NetworkDetails) GetDateBlockHeightMapping(startBlock int64) (map[time.
 	log.Printf("finding midnight blocks for date range: start(%d/%d/%d) end(%d/%d/%d)",
 		st.Month(), st.Day(), st.Year(), ed.Month(), ed.Day(), ed.Year())
 
-	for _, date := range dates {
-		if date.After(time.Now()) {
-			break
-		}
+	blockmap[st] = start
 
-		estimateBlock, err := cr.GetBlock(NextBlockHeight(start, date, secondsPerBlock))
+	edbl, err := nd.GetBlock(status.SyncInfo.LatestBlockHeight)
+	if err != nil {
+		return nil, err
+	}
+
+	blockmap[ed] = edbl
+
+	dates = dates[1 : len(dates)-1]
+
+	for _, date := range dates {
+
+		estimateBlock, err := nd.GetBlock(NextBlockHeight(start, date, secondsPerBlock))
 		if err != nil {
 			return nil, err
 		}
@@ -91,7 +99,7 @@ func (cr *NetworkDetails) GetDateBlockHeightMapping(startBlock int64) (map[time.
 		// midnight height implementation below. debug and fix this.
 
 		for math.Abs(diff.Seconds()) > 60 {
-			estimateBlock, err = cr.GetBlock(NextBlockHeight(start, date, secondsPerBlock))
+			estimateBlock, err = nd.GetBlock(NextBlockHeight(start, date, secondsPerBlock))
 			if err != nil {
 				return nil, err
 			}
@@ -129,21 +137,21 @@ func (cr *NetworkDetails) Status() (*ctypes.ResultStatus, error) {
 // date and should just return those digits.
 
 // TODO: completely review this logic
-func getMidnightTime(t0 time.Time) time.Time {
-	if t0.Hour() < 12 {
-		return time.Date(t0.Year(), t0.Month(), t0.Day(), 0, 0, 0, 0, t0.Location())
-	}
-	return time.Date(t0.Year(), t0.Month(), t0.Day()-1, 0, 0, 0, 0, t0.Location())
+func getNextMidnightTime(t0 time.Time) time.Time {
+	return time.Date(t0.Year(), t0.Month(), t0.Day()+1, 0, 0, 0, 0, t0.Location())
 }
 
 func makeDates(startTime, endTime time.Time) []time.Time {
-	out := []time.Time{}
+	// [start, d{1}, d{2} ... d{n-1}, d{n}, end]
+	out := []time.Time{startTime}
 	ct := startTime
-	for ct.Before(endTime) {
-		out = append(out, getMidnightTime(ct))
-		ct = ct.Add(time.Hour * 24)
-		if ct.After(time.Now()) {
-			return out
+	for {
+		ct = getNextMidnightTime(ct)
+		if ct.Before(endTime) {
+			out = append(out, ct)
+		} else if ct.After(endTime) || ct.After(time.Now()) {
+			out = append(out, endTime)
+			break
 		}
 	}
 	return out
