@@ -64,7 +64,7 @@ func (cr *NetworkDetails) GetDateBlockHeightMapping(startBlock int64) (map[time.
 	var (
 		blockmap        = map[time.Time]*ctypes.ResultBlock{}
 		secondsPerBlock = start.Block.Time.Sub(status.SyncInfo.LatestBlockTime).Seconds() / float64(startBlock-status.SyncInfo.LatestBlockHeight)
-		dates           = makeDates(start.Block.Time, status.SyncInfo.LatestBlockTime)
+		dates           = makeDates(start.Block.Time, status.SyncInfo.LatestBlockTime)[1:]
 	)
 
 	st := dates[0]
@@ -93,6 +93,7 @@ func (cr *NetworkDetails) GetDateBlockHeightMapping(startBlock int64) (map[time.
 		for math.Abs(diff.Seconds()) > 60 {
 			estimateBlock, err = cr.GetBlock(NextBlockHeight(start, date, secondsPerBlock))
 			if err != nil {
+
 				return nil, err
 			}
 			secondsPerBlock = SecondsPerBlock(start, estimateBlock)
@@ -130,7 +131,7 @@ func (cr *NetworkDetails) Status() (*ctypes.ResultStatus, error) {
 
 // TODO: completely review this logic
 func getMidnightTime(t0 time.Time) time.Time {
-	if t0.Hour() < 12 {
+	if t0.Hour() < 14 {
 		return time.Date(t0.Year(), t0.Month(), t0.Day(), 0, 0, 0, 0, t0.Location())
 	}
 	return time.Date(t0.Year(), t0.Month(), t0.Day()-1, 0, 0, 0, 0, t0.Location())

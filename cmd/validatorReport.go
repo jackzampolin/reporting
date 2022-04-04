@@ -54,12 +54,15 @@ var validatorReportCmd = &cobra.Command{
 			blockNums = append(blockNums, int(v.Block.Height))
 			k, v := k, v
 			eg.Go(func() error {
+				fmt.Println("beginning pull for", k)
 				bd, err := network.GetBlockData(v.Block.Height, address, k)
 				if err != nil {
+					fmt.Println("networkgetblock", err)
 					return err
 				}
 				price, err := network.GetPrice(k)
 				if err != nil {
+					fmt.Println("getpriceerr", err)
 					return err
 				}
 				bd.Price = price
